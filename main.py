@@ -6,8 +6,11 @@ from evaluators.discrimination import compute_metrics
 from evaluators.calibration import compute_ece
 from evaluators.high_conf_errors import find_high_confidence_errors
 from cri.clinical_readiness_index import compute_cri
+from fastapi.staticfiles import StaticFiles
+from explainability import render_explainability_section
 
 app = FastAPI(title="MedTrust-Audit")
+app.mount("/explainability", StaticFiles(directory="explainability"), name="explainability")
 
 CLASS_NAMES = ['glioma', 'meningioma', 'notumor', 'pituitary']
 
@@ -132,6 +135,24 @@ def dashboard():
             }}
             .footer {{ margin-top: 32px; font-size: 13px; color: var(--muted); text-align: center; }}
             .footer a {{ color: var(--muted); }}
+           .scope-note {{ font-size: 13px; color: var(--muted); margin-bottom: 16px; }}
+.gradcam-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+}}
+.gradcam-card {{
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fafafa;
+}}
+.gradcam-card img {{ width: 100%; display: block; }}
+.gradcam-caption {{ padding: 8px 10px; font-size: 12px; }}
+.gradcam-caption span {{ display: block; }}
+.gc-true {{ color: var(--muted); }}
+.gc-pred {{ color: #dc2626; font-weight: 600; }}
+.gc-conf {{ color: var(--muted); }}
         </style>
     </head>
     <body>
@@ -178,10 +199,7 @@ def dashboard():
             <div class="metric-row"><span class="metric-label">Errors / High-confidence predictions</span><span class="metric-value">{r['high_confidence_audit']['high_conf_errors']} / {r['high_confidence_audit']['total_high_conf_predictions']}</span></div>
         </div>
 
-        <div class="note">
-            <strong>Explainability (4th pillar):</strong> Not yet surfaced in this dashboard. The published framework's spatial bias auditing (Grad-CAM) is planned as a future addition &mdash; see repo README for status.
-        </div>
-
+      {render_explainability_section()}
         <div class="footer">
             <a href="/audit">Raw JSON</a> &middot;
             Implements the Clinical Readiness Index from
