@@ -1,26 +1,22 @@
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 import numpy as np
-from evaluators.discrimination import compute_metrics
-from evaluators.calibration import compute_ece
-from evaluators.high_conf_errors import find_high_confidence_errors
-from cri.clinical_readiness_index import compute_cri
 
-# Load REAL predictions
 y_true = np.load('y_true.npy')
 y_pred = np.load('y_pred.npy')
-y_pred_probs = np.load('y_pred_probs.npy')
 
-print("=== DISCRIMINATION ===")
-disc = compute_metrics(y_true, y_pred)
-print(disc)
+print("=== CONFUSION MATRIX ===")
+print(confusion_matrix(y_true, y_pred))
 
-print("\n=== CALIBRATION ===")
-ece = compute_ece(y_true, y_pred_probs)
-print(f"ECE: {ece}")
+print("\n=== CLASSIFICATION REPORT ===")
+print(classification_report(y_true, y_pred, target_names=['glioma', 'meningioma', 'notumor', 'pituitary']))
 
-print("\n=== HIGH-CONFIDENCE ERRORS ===")
-hce = find_high_confidence_errors(y_true, y_pred, y_pred_probs)
-print(hce)
+print("\n=== RAW METRICS (unrounded) ===")
+print(f"Accuracy:  {accuracy_score(y_true, y_pred)}")
+print(f"Precision: {precision_score(y_true, y_pred, average='weighted')}")
+print(f"Recall:    {recall_score(y_true, y_pred, average='weighted')}")
+print(f"F1:        {f1_score(y_true, y_pred, average='weighted')}")
 
-print("\n=== CLINICAL READINESS INDEX ===")
-cri = compute_cri(disc['accuracy'], ece, hce['high_confidence_error_rate'])
-print(cri)
+print("\n=== MACRO AVERAGE (more honest for imbalanced data) ===")
+print(f"Precision (macro): {precision_score(y_true, y_pred, average='macro')}")
+print(f"Recall (macro):    {recall_score(y_true, y_pred, average='macro')}")
+print(f"F1 (macro):        {f1_score(y_true, y_pred, average='macro')}")
