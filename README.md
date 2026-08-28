@@ -53,11 +53,17 @@ This gap is consistent with the paper's own Table V, which documents seed-to-see
 
 Model checkpoints are not committed to this repository (large binary files, excluded via `.gitignore`). To reproduce the training run yourself, the exact training script matching the paper's protocol is available on request, or can be reconstructed from the methodology described in Section III of the paper.
 
+## Generalization Pillar
+**Status: Pending external validation.** The Figshare test was attempted but 
+the Nickparvar training dataset is documented as containing Figshare images. 
+A true zero-shot test on a non-overlapping dataset is the next step.
+
 ## Status & Limitations
 
 - Explainability (Grad-CAM spatial bias auditing) is described in the paper but not yet implemented in this tool.
 - Generalization is currently hardcoded to 1.0 (no cross-dataset evaluation implemented yet).
 - This tool evaluates one fixed set of saved predictions; it does not currently accept arbitrary uploaded models.
+
 
 ## Citation
 
