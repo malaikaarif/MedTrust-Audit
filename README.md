@@ -2,71 +2,97 @@
 
 **Clinical Trust Evaluation for Medical Imaging AI**
 
-MedTrust-Audit is an open-source implementation of the Clinical Readiness Index (CRI) proposed in our IEEE submission, *"Beyond Accuracy: A Multi-Pillar Clinical Trust Framework for Brain Tumor MRI Classification"* (Safdar, Raza, Arif). It runs a trained medical imaging classifier's predictions through four evaluation pillars and returns a single composite score with a DEPLOY / REVIEW / REJECT verdict.
-
-Most medical imaging papers report accuracy alone. This tool checks whether high accuracy is hiding dangerous failure modes — miscalibration, silent high-confidence errors, and poor generalization — before a model is trusted in a clinical setting.
+A brain tumor MRI classifier can be 94%+ accurate and still be dangerous — if it's confidently wrong exactly when it matters most. MedTrust-Audit is an open-source implementation of the Clinical Readiness Index (CRI), proposed in our IEEE submission *"Beyond Accuracy: A Multi-Pillar Clinical Trust Framework for Brain Tumor MRI Classification"* (Safdar, Raza, Arif — submitted 2026). It runs a classifier's predictions through four evaluation pillars and returns a single composite score with a DEPLOY / REVIEW / REJECT verdict — because accuracy alone doesn't tell you whether a model is safe to trust.
 
 ## The Four Pillars
 
-1. **Discrimination** — accuracy, precision, recall, F1 (standard classification performance)
-2. **Calibration** — Expected Calibration Error (ECE): does the model's stated confidence match its actual accuracy?
-3. **High-Confidence Audit** — of the model's most confident predictions, what fraction are silently wrong? A model can be accurate overall while still failing dangerously on the cases it claims to be sure about.
-4. **Explainability** — *(not yet implemented in this dashboard)*. The published framework's spatial bias auditing (Grad-CAM, edge-bias metrics) is planned as a future addition. See "Status & Limitations" below.
+| Pillar | Question it answers |
+|---|---|
+| **Discrimination** | Standard accuracy, precision, recall, F1 |
+| **Calibration** | Does the model's stated confidence match its actual accuracy? (ECE) |
+| **High-Confidence Audit** | Of the model's most confident predictions, what fraction are silently wrong? |
+| **Explainability** | Does the model attend to anatomically plausible regions when confidently wrong? (Grad-CAM) |
 
-These four scores combine into the **Clinical Readiness Index**:
+These combine into the **Clinical Readiness Index**:
 
 ```
 CRI = 0.40·Accuracy + 0.25·(1−ECE) + 0.20·(1−HCE) + 0.15·Generalization
 ```
 
-matching Equation (4) of the paper. `Generalization` defaults to 1.0 for primary-dataset evaluation (no cross-dataset test currently performed by this tool).
+matching Equation (4) of the paper.
 
-## Running It Locally
+## Live Results (Independent Reproduction)
+
+An independently trained MobileNetV2 — matching the paper's architecture, Focal Loss (γ=2.0, α=0.25), and training protocol — evaluated on 1,600 held-out test images (400/class):
+
+| Metric | This reproduction | Paper (seed 42) |
+|---|---|---|
+| Accuracy | 94.19% | 94.69% |
+| ECE | 0.0292 | 0.0479 |
+| High-confidence error rate | 2.66% (39/1,465) | 74.12%* |
+| Generalization | Pending validation (see below) | 86.13% (Figshare) |
+| **CRI** | **0.9641 → DEPLOY** | **0.8186 → DEPLOY** |
+
+\*Different denominator definition — see `evaluators/high_conf_errors.py`. Under either definition, this reproduction's rate is substantially lower than the paper's reported run.
+
+This is close to, but not identical to, the paper's figures — expected seed-to-seed variance (the paper's own Table V documents this). Notably, 5 of 6 highest-confidence errors in this reproduction were glioma misclassified as meningioma/notumor — matching the paper's own documented weak point (glioma had the lowest recall in the original study too), a real cross-validation signal that both runs found the same underlying model limitation.
+
+## Generalization: An Honest Dead End (For Now)
+
+We attempted to measure real cross-dataset generalization using the Figshare brain tumor dataset (the same one the paper used, reporting 86.13% zero-shot accuracy). Our test returned 98.34% — higher than our own primary-dataset accuracy, which is not how generalization is supposed to behave.
+
+Investigating why: the Kaggle training dataset (Nickparvar et al.) used for the primary model is **documented as being compiled from Figshare, SARTAJ, and Br35H sources** — meaning our "unseen" Figshare test set may not have been unseen at all. We verified this against multiple independent academic sources before accepting it, rather than trusting a single claim.
+
+**We discarded the 98.34% result rather than report it.** The Generalization pillar remains hardcoded to 1.0 (a neutral placeholder) pending a genuinely non-overlapping external dataset. This is disclosed directly on the dashboard, not hidden.
+
+## Explainability: Sample Audit
+
+Grad-CAM heatmap overlays for 6 of the model's real high-confidence errors, with true/predicted/confidence labels. This is an illustrative sample — the paper's full methodology audits all 1,600 test images with quantitative edge-bias metrics; this tool currently covers a smaller, honestly-scoped sample.
+
+## Running Locally
 
 ```bash
 pip install -r requirements.txt
 python -m uvicorn main:app --reload
 ```
 
-Then open `http://127.0.0.1:8000` for the dashboard, or `http://127.0.0.1:8000/audit` for raw JSON.
+Visit `http://127.0.0.1:8000` for the dashboard, or `/audit` for raw JSON.
 
-The tool reads `y_true.npy`, `y_pred.npy`, and `y_pred_probs.npy` from the repo root — the ground-truth labels, model predictions, and per-class softmax probabilities for a test set.
+## Auditing Your Own Model
 
-## The Model Behind the Included Sample Audit
+`POST /audit/upload` accepts `y_true`, `y_pred`, `y_pred_probs` as `.npy` files and returns a full CRI audit. Deliberately accepts only prediction arrays, never model files — loading arbitrary model files (`.h5`/`.keras`) is a known code-execution risk we chose not to introduce.
 
-The `.npy` files in this repo come from an independent MobileNetV2 reproduction, trained by me on the same public Brain Tumor MRI dataset (Nickparvar et al.) and matching the paper's methodology: ImageNet-pretrained MobileNetV2 with the final 50 layers unfrozen, Focal Loss (γ=2.0, α=0.25), and the paper's exact preprocessing/augmentation settings (Section III-A–D). The test split matches the paper's structure exactly: 1,600 held-out images, 400 per class.
+## Repository Contents
 
-**Reproducibility note:** this independent run landed close to — but not identical to — the paper's originally reported seed-42 result:
+```
+main.py                    — FastAPI app, dashboard, /audit and /audit/upload endpoints
+evaluators/                — discrimination, calibration, high-confidence-error modules
+cri/                       — Clinical Readiness Index computation
+explainability.py          — Grad-CAM sample rendering
+explainability/gradcam_samples/  — 6 real heatmap images
+tests/                     — pytest suite (9 tests, including a regression test on verified numbers)
+y_true.npy, y_pred.npy, y_pred_probs.npy  — the reproduction's saved predictions
+```
 
-| Metric | This reproduction | Paper (seed 42) |
-|---|---|---|
-| Accuracy | 94.19% | 94.69% |
-| ECE | 0.0292 | 0.0479 |
-| High-confidence error rate | 2.66% | 74.12%* |
-| CRI | 0.9641 | 0.8186 |
+Model weights are not committed (large binary files, excluded via `.gitignore`). Training code matching the paper's exact protocol lives in a companion repository: **[brain-tumor-clinical-trust-framework](https://github.com/malaikaarif/brain-tumor-clinical-trust-framework)**.
 
-\*The paper's stated HCE figure uses a different denominator (high-confidence errors ÷ total errors) than this tool's implementation (high-confidence errors ÷ total high-confidence predictions) — see `evaluators/high_conf_errors.py`. Under either definition, this reproduction's high-confidence error rate is substantially lower than the paper's reported run.
+## Testing
 
-This gap is consistent with the paper's own Table V, which documents seed-to-seed accuracy variance (σ up to 0.61% for some architectures) — this reproduction simply landed on a more favorably-calibrated instance of the same training recipe. The model weights themselves are not included in this repository (too large for git; see below).
-
-## Obtaining the Model Weights
-
-Model checkpoints are not committed to this repository (large binary files, excluded via `.gitignore`). To reproduce the training run yourself, the exact training script matching the paper's protocol is available on request, or can be reconstructed from the methodology described in Section III of the paper.
-
-## Generalization Pillar
-**Status: Pending external validation.** The Figshare test was attempted but 
-the Nickparvar training dataset is documented as containing Figshare images. 
-A true zero-shot test on a non-overlapping dataset is the next step.
+```bash
+pip install pytest
+python -m pytest tests/
+```
 
 ## Status & Limitations
 
-- Explainability (Grad-CAM spatial bias auditing) is described in the paper but not yet implemented in this tool.
-- Generalization is currently hardcoded to 1.0 (no cross-dataset evaluation implemented yet).
-- This tool evaluates one fixed set of saved predictions; it does not currently accept arbitrary uploaded models.
-
+- Generalization pillar is a placeholder pending a valid non-overlapping external dataset.
+- Explainability covers 6 sample cases, not the paper's full 1,600-image audit.
+- This tool evaluates one fixed set of saved predictions by default, plus any predictions uploaded via `/audit/upload`.
 
 ## Citation
 
-If referencing this work, please cite:
+> Safdar, I., Raza, Z., Arif, M. "Beyond Accuracy: A Multi-Pillar Clinical Trust Framework for Brain Tumor MRI Classification." Submitted, IEEE, 2026.
 
-> Safdar, I., Raza, Z., Arif, M. "Beyond Accuracy: A Multi-Pillar Clinical Trust Framework for Brain Tumor MRI Classification." Submitted, 2026.
+## License
+
+MIT
